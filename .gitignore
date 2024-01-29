@@ -1,0 +1,6 @@
+/target
+*.mp4
+indexes/**
+test.js
+test2.js
+test.sh
