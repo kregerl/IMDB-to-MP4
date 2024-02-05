@@ -5,7 +5,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use scraper::{error::SelectorErrorKind, Html, Selector};
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Manifest {
     pub title: String,
     pub index: String,
@@ -30,7 +30,7 @@ pub fn download_series<'a>(episodes: &'a [Episode], episode_filter: fn(&Episode)
 }
 
 pub fn download_video_manifest<'a>(title: &str, iframe_url: &str) -> VidsrcResult<'a, Manifest> {
-    println!("Downloading movie '{}'", title);
+    // println!("Downloading movie '{}'", title);
     let hash_parts = request_hash_page(&iframe_url).unwrap();
 
     let encoded_file_id_url_part = spawn_js_worker(
@@ -43,7 +43,7 @@ pub fn download_video_manifest<'a>(title: &str, iframe_url: &str) -> VidsrcResul
 
     let decoded_index_url =
         spawn_js_worker("src/js/decode_file_id.js", &[encoded_file_id]).unwrap();
-    println!("decoded_index_url: {}", decoded_index_url);
+    // println!("decoded_index_url: {}", decoded_index_url);
     
     let data = reqwest::blocking::get(decoded_index_url.trim())?;
 
