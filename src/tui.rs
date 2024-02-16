@@ -29,6 +29,7 @@ pub struct App<'a> {
     title: Option<String>,
     percentages: [Arc<RwLock<u16>>; 4],
     text_input: TextInput<'a>,
+    pub queue: Vec<String>
 }
 
 impl<'a> App<'a> {
@@ -37,6 +38,7 @@ impl<'a> App<'a> {
             title: None,
             percentages: Default::default(),
             text_input: TextInput::new("IMDB Url"),
+            queue: Default::default()
         }
     }
 }
@@ -109,7 +111,6 @@ fn handle_events(app: &mut App) -> io::Result<bool> {
 
             match key.code {
                 KeyCode::Enter => {
-                    
                     app.text_input.clear();
                 },
                 KeyCode::Esc => return Ok(true),
