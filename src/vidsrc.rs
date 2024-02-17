@@ -1,8 +1,11 @@
 use std::{io, process::Command, string::FromUtf8Error};
 
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::header::{HeaderName, HeaderValue};
-use scraper::{error::SelectorErrorKind, Html, Selector};
+use scraper::{error::SelectorErrorKind, Selector};
+
+use crate::scraper::{get_document, parse_attribute, parse_inner_html};
 
 
 #[derive(Debug)]
@@ -10,27 +13,36 @@ pub struct Manifest {
     pub title: String,
     pub index: String,
     pub season: Option<String>,
-    pub episode: Option<String>
+    pub episode: Option<String>,
 }
 
 pub fn download_series<'a>(episodes: &'a [Episode], episode_filter: fn(&Episode) -> bool) -> VidsrcResult<'a, Vec<Manifest>> {
-    let mut manifests = Vec::with_capacity(episodes.len());
-    for episode in episodes {
-        if !episode_filter(episode) {
-            continue;
-        }
+    let episodes = episodes.iter().filter(|episode| episode_filter(episode)).collect::<Vec<_>>();
+    let length = episodes.len();
+    let mut manifests = Vec::with_capacity(length);
 
+    let pb = ProgressBar::new(length as u64);
+    let sty = ProgressStyle::with_template(
+        "{msg} {bar:40.cyan/blue} {pos:>7}/{len:7} [{elapsed_precise}]",
+    )
+    .unwrap()
+    .progress_chars("##-");
+    pb.set_style(sty);
+    pb.println("Downloading Manifests...");
+    for episode in episodes {
+        pb.set_message(episode.title.clone());
         let video_source = request_video_source(&episode.data_iframe)?;
         let mut manifest = download_video_manifest(&video_source.title, &video_source.data_iframe)?;
         manifest.episode = Some(episode.episode.clone());
         manifest.season = Some(episode.season.clone());
         manifests.push(manifest);
+        pb.inc(1);
     }
+    pb.finish();
     Ok(manifests)
 }
 
 pub fn download_video_manifest<'a>(title: &str, iframe_url: &str) -> VidsrcResult<'a, Manifest> {
-    println!("Downloading movie '{}'", title);
     let hash_parts = request_hash_page(&iframe_url).unwrap();
 
     let encoded_file_id_url_part = spawn_js_worker(
@@ -43,7 +55,7 @@ pub fn download_video_manifest<'a>(title: &str, iframe_url: &str) -> VidsrcResul
 
     let decoded_index_url =
         spawn_js_worker("src/js/decode_file_id.js", &[encoded_file_id]).unwrap();
-    println!("decoded_index_url: {}", decoded_index_url);
+    // println!("decoded_index_url: {}", decoded_index_url);
     
     let data = reqwest::blocking::get(decoded_index_url.trim())?;
 
@@ -112,10 +124,11 @@ impl<'a> From<SelectorErrorKind<'a>> for VidsrcError<'a> {
     }
 }
 
-type VidsrcResult<'a, T> = Result<T, VidsrcError<'a>>;
+pub type VidsrcResult<'a, T> = Result<T, VidsrcError<'a>>;
 
 #[derive(Debug)]
 pub struct Episode {
+    title: String,
     data_iframe: String,
     pub season: String,
     pub episode: String
@@ -133,9 +146,9 @@ pub enum Video {
     Series(Vec<Episode>),
 }
 
-const BASE_URL: &str = "https://vidsrc.xyz";
+const VIDSRC_BASE_URL: &str = "https://vidsrc.xyz";
 pub fn request_video_page(imdb: &str) -> VidsrcResult<Video> {
-    let url = format!("{}/embed/{}", BASE_URL, imdb);
+    let url = format!("{}/embed/{}", VIDSRC_BASE_URL, imdb);
 
     let document = get_document(&url)?;
 
@@ -156,7 +169,9 @@ pub fn request_video_page(imdb: &str) -> VidsrcResult<Video> {
             let iframe_attr = tag.attr("data-iframe").ok_or(VidsrcError::EmptyAttr)?;
             let season_attr = tag.attr("data-s").ok_or(VidsrcError::EmptyAttr)?;
             let episode_attr = tag.attr("data-e").ok_or(VidsrcError::EmptyAttr)?;
+            let title = tag.inner_html();
             episodes.push(Episode {
+                title,
                 data_iframe: iframe_attr.into(),
                 season: season_attr.into(),
                 episode: episode_attr.into(),
@@ -167,7 +182,7 @@ pub fn request_video_page(imdb: &str) -> VidsrcResult<Video> {
 }
 
 fn request_video_source(endpoint: &str) -> VidsrcResult<VideoSource> {
-    let url = format!("{}{}", BASE_URL, endpoint);
+    let url = format!("{}{}", VIDSRC_BASE_URL, endpoint);
     let document = get_document(&url)?;
 
     let iframe_url_part = parse_attribute(&document, "#player_iframe", "src")?;
@@ -180,11 +195,7 @@ fn request_video_source(endpoint: &str) -> VidsrcResult<VideoSource> {
     })
 }
 
-fn get_document<'a>(url: &str) -> VidsrcResult<'a, Html> {
-    let response = reqwest::blocking::get(url)?;
-    let html = response.text()?;
-    Ok(scraper::Html::parse_document(&html).to_owned())
-}
+
 
 fn request_hash_page(url: &str) -> VidsrcResult<(String, String)> {
     let response = reqwest::blocking::Client::new()
@@ -228,25 +239,3 @@ fn request_encoded_file_id(url: &str) -> VidsrcResult<String> {
     Ok(encoded_file_id.into())
 }
 
-fn parse_attribute<'a>(
-    document: &Html,
-    selector_str: &'a str,
-    attr: &str,
-) -> VidsrcResult<'a, String> {
-    let selector = Selector::parse(selector_str)?;
-    let tag = document
-        .select(&selector)
-        .next()
-        .ok_or(VidsrcError::EmptySelector)?;
-    let atribute = tag.attr(attr).ok_or(VidsrcError::EmptyAttr)?;
-    Ok(atribute.into())
-}
-
-fn parse_inner_html<'a>(document: &Html, selector_str: &'a str) -> VidsrcResult<'a, String> {
-    let selector = Selector::parse(selector_str)?;
-    let tag = document
-        .select(&selector)
-        .next()
-        .ok_or(VidsrcError::EmptySelector)?;
-    Ok(tag.inner_html())
-}

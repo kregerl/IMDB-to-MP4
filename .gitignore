@@ -4,3 +4,4 @@ indexes/**
 test.js
 test2.js
 test.sh
+*.yaml
