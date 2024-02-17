@@ -7,6 +7,14 @@ Given an IMDB URL, this program will download the movie or all episodes and seas
 
 For example the Deadpool IMDB url is `https://www.imdb.com/title/tt1431045/`
 
+When downloading shows, directories are created for each season of of the show. Episodes are downloaded into their respective directories.  
+For example:
+```
+<Show Name>
+    - Season 01
+        - <Show Name> S01E01
+```
+
 ## Usage
 ```
 Usage: movie-downloader [OPTIONS]
